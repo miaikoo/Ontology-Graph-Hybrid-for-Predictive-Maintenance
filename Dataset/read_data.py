@@ -1,12 +1,12 @@
 import pandas as pd
 from neo4j import GraphDatabase
 import os
+import numpy as np
 
 # --- 1. CONFIGURATION ---
 DATA_PATH = r'secom.data'
 LABELS_PATH = r'secom_labels.data'
 NEO4J_PASS = "12345678"
-# --------------------
 
 NEO4J_URI = "bolt://localhost:7687"
 NEO4J_USER = "neo4j"
@@ -25,6 +25,8 @@ try:
 
     # Combine into one DataFrame
     df_secom = pd.concat([df_features, df_labels], axis=1)
+    df_secom = df_secom.replace({np.nan: None}) 
+    
     print(f"Successfully loaded {len(df_secom)} rows.")
 
 except FileNotFoundError:
@@ -37,36 +39,25 @@ except Exception as e:
     exit()
 
 # --- 3. NEO4J QUERY DEFINITIONS ---
-
-# This query transforms one row (a ProcessStep) and its readings
 CREATE_GRAPH_QUERY = """
 // 1. Find the :ProcessStep node or create it
 MERGE (p:ProcessStep {id: $step_id})
-// 2. Set its properties (timestamp/status)
-SET p.status = $status, p.timestamp = $timestamp
+
+// 2. Set all other properties from the map (timestamp, status, f_0...f_589)
+// 'p += $props' adalah cara efisien untuk menambahkan semua key-value dari map
+SET p += $props
 
 // 3. Add the :FailureEvent label if it failed (status = 1)
 WITH p
 CALL apoc.do.when(
-    $status = 1,
+    $props.status = 1,
     'SET p:FailureEvent',
     '',
     {p: p}
 ) YIELD value
-
-// 4. Loop through all features we passed in
-UNWIND $features AS feature_data
-
-// 5. Find the matching :Sensor node (which we already created in Neo4j)
-MATCH (s:Sensor {id: feature_data.sensor_id})
-
-// 6. Create the new :Reading node and connect everything
-CREATE (r:Reading {value: feature_data.value})
-CREATE (p)-[:HAS_READING]->(r)
-CREATE (r)-[:MEASURED_BY]->(s)
+RETURN p
 """
 
-# This query links ProcessSteps in order based on time
 LINK_STEPS_QUERY = """
 // Find all steps, order them by time
 MATCH (p:ProcessStep)
@@ -80,7 +71,6 @@ MERGE (p1)-[:NEXT_STEP]->(p2);
 """
 
 # --- 4. NEO4J DATA INGESTION ---
-
 try:
     print("Connecting to Neo4j...")
     driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASS))
@@ -90,33 +80,28 @@ try:
         session.run("RETURN 1")
         print("Connection successful.")
 
+        print("Clearing old data (MATCH (n) DETACH DELETE n)...")
+        session.run("MATCH (n) DETACH DELETE n")
+        print("Old data cleared.")
+
         # We loop through each ROW in the DataFrame
         print(f"Starting to load {len(df_secom)} ProcessSteps...")
-        for idx, row in df_secom.iterrows():
+        all_rows = df_secom.to_dict('records')
+        
+        for idx, row_data in enumerate(all_rows):
             
             step_id = f"Step_{idx}"
-            status_label = row['Label']
-            timestamp_val = row['Timestamp']
+            row_data['status'] = int(row_data.pop('Label'))
             
-            # Create the list of features for this row
-            features_list = []
             for i in range(590):
                 feature_name = f'f_{i}'
-                feature_value = row[feature_name]
-                
-                # IMPORTANT: Only create a :Reading node if the value is not null (NaN)
-                if pd.notna(feature_value):
-                    features_list.append({
-                        'sensor_id': feature_name,
-                        'value': float(feature_value) # Ensure it's a standard float
-                    })
+                if row_data[feature_name] is not None:
+                    row_data[feature_name] = float(row_data[feature_name])
             
             # Run the query for this one row
             session.run(CREATE_GRAPH_QUERY, 
-                        step_id=step_id, 
-                        status=int(status_label), # Ensure it's a standard int
-                        timestamp=timestamp_val, 
-                        features=features_list)
+                          step_id=step_id, 
+                          props=row_data)
 
             if (idx + 1) % 100 == 0:
                 print(f"  Processed {idx + 1} / {len(df_secom)} rows.")
@@ -127,6 +112,16 @@ try:
         print("Linking steps with [:NEXT_STEP] relationship...")
         session.run(LINK_STEPS_QUERY)
         print("Done linking steps.")
+        
+        print("Creating index on ProcessStep(id) for faster lookups...")
+        try:
+            session.run("CREATE CONSTRAINT ProcessStep_id_unique FOR (p:ProcessStep) REQUIRE p.id IS UNIQUE")
+        except Exception as e:
+            if "already exists" in str(e):
+                print("Index/Constraint already exists.")
+            else:
+                raise e
+        print("Index created.")
 
     print("Data ingestion complete!")
 
