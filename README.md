@@ -2,13 +2,9 @@
 
 ## Problem Description
 
----
-
 desc goes here
 
 ## Software Environment
-
----
 
 Python 3.12.6
 
@@ -23,8 +19,6 @@ Neo4j Dekstop 2.0.5
 Neo4j Database 5.26.0 
 
 ## Get Started
-
----
 
 **Python**
 
@@ -44,3 +38,4 @@ pip install pandas neo4j
     ```
     
 2. Run /Dataset/read_data.py
+
