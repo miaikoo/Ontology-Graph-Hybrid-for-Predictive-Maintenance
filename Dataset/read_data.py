@@ -8,7 +8,7 @@ DATA_PATH = r'secom.data'
 LABELS_PATH = r'secom_labels.data'
 NEO4J_PASS = "12345678"
 
-NEO4J_URI = "bolt://localhost:7687"
+NEO4J_URI = "neo4j://127.0.0.1:7687"
 NEO4J_USER = "neo4j"
 
 # --- 2. LOAD DATA WITH PANDAS ---
