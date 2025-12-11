@@ -34,7 +34,7 @@ def train_xgboost_smote():
     
     # 2. APPLY SMOTE
     print(">>> 4. Applying SMOTE to Training Data...")
-    smote = SMOTE(random_state=42, sampling_strategy=0.5) # Buat rasio fail:normal jadi 1:2
+    smote = SMOTE(random_state=42, sampling_strategy=0.5) # Fail ratio 1:2
     X_train_res, y_train_res = smote.fit_resample(X_train, y_train)
     
     print(f"    New Training Distribution: {y_train_res.value_counts().to_dict()}")

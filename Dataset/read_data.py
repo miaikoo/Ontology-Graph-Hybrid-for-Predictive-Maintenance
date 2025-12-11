@@ -39,7 +39,6 @@ CREATE_GRAPH_QUERY = """
 MERGE (p:ProcessStep {id: $step_id})
 
 // 2. Set all other properties from the map (timestamp, status, f_0...f_589)
-// 'p += $props' adalah cara efisien untuk menambahkan semua key-value dari map
 SET p += $props
 
 // 3. Add the :FailureEvent label if it failed (status = 1)

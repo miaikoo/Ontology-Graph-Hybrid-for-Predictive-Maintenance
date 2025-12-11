@@ -79,6 +79,7 @@ class PredictiveMaintenanceEvaluator:
 
                 if threshold_met:
                     is_failure = True
+                    print(f"DEBUG: Alert! {rule['sensor']} value {sensor_val} violated {rule['condition']} {rule['threshold']}")
                     if rule["confidence"] > max_confidence:
                         max_confidence = rule["confidence"]
 
