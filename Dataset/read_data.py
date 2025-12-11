@@ -2,6 +2,10 @@ import pandas as pd
 from neo4j import GraphDatabase
 import os
 import numpy as np
+from sys import path
+path.insert(0, '..')
+
+from preprocess import DataPreprocessor
 
 # --- 1. CONFIGURATION ---
 DATA_PATH = r'secom.data'
@@ -11,23 +15,14 @@ NEO4J_PASS = "12345678"
 NEO4J_URI = "neo4j://127.0.0.1:7687"
 NEO4J_USER = "neo4j"
 
-# --- 2. LOAD DATA WITH PANDAS ---
-print("Loading data from files...")
+# --- 2. PREPROCESS DATA ---
+print("Loading and preprocessing data...")
 try:
-    # Load features
-    df_features = pd.read_csv(DATA_PATH, sep=' ', header=None)
-    # Create feature names f_0 to f_589
-    df_features.columns = [f'f_{i}' for i in range(df_features.shape[1])]
-
-    # Load labels
-    df_labels = pd.read_csv(LABELS_PATH, sep=' ', header=None)
-    df_labels.columns = ['Label', 'Timestamp']
-
-    # Combine into one DataFrame
-    df_secom = pd.concat([df_features, df_labels], axis=1)
-    df_secom = df_secom.replace({np.nan: None}) 
+    preprocessor = DataPreprocessor()
+    df_features, df_labels = preprocessor.preprocess(DATA_PATH, LABELS_PATH)
     
-    print(f"Successfully loaded {len(df_secom)} rows.")
+    print(f"Successfully preprocessed {len(df_features)} rows.")
+    print(f"Final feature count: {len(df_features.columns)}")
 
 except FileNotFoundError:
     print(f"Error: Data files not found. Check your paths.")
@@ -85,18 +80,20 @@ try:
         print("Old data cleared.")
 
         # We loop through each ROW in the DataFrame
-        print(f"Starting to load {len(df_secom)} ProcessSteps...")
-        all_rows = df_secom.to_dict('records')
+        print(f"Starting to load {len(df_features)} ProcessSteps...")
+        all_rows = df_features.to_dict('records')
         
         for idx, row_data in enumerate(all_rows):
             
             step_id = f"Step_{idx}"
-            row_data['status'] = int(row_data.pop('Label'))
+            # Get label for this step
+            status = int(df_labels.iloc[idx])
+            row_data['status'] = status
             
-            for i in range(590):
-                feature_name = f'f_{i}'
-                if row_data[feature_name] is not None:
-                    row_data[feature_name] = float(row_data[feature_name])
+            # All features are already normalized (float values between 0-1)
+            for col in row_data:
+                if isinstance(row_data[col], (int, float, np.number)):
+                    row_data[col] = float(row_data[col])
             
             # Run the query for this one row
             session.run(CREATE_GRAPH_QUERY, 
@@ -104,7 +101,7 @@ try:
                           props=row_data)
 
             if (idx + 1) % 100 == 0:
-                print(f"  Processed {idx + 1} / {len(df_secom)} rows.")
+                print(f"  Processed {idx + 1} / {len(df_features)} rows.")
 
         print("All ProcessSteps loaded.")
         
